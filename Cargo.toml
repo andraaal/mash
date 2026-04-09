@@ -1,0 +1,14 @@
+[package]
+name = "codecrafters-shell"
+version = "0.1.0"
+authors = ["Codecrafters <hello@codecrafters.io>"]
+edition = "2024"
+rust-version = "1.91"
+
+[dependencies]
+anyhow = "1.0.68"                                # error handling
+# bytes = "1.3.0"                                  # helps manage buffers
+faccess = "0.2.4"
+# thiserror = "1.0.38"                             # error handling
+itertools = "0.14.0"
+# st_ring_buffer = "1.0.0"
