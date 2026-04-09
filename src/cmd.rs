@@ -1,6 +1,7 @@
 use crate::args::{Args, Token};
 use crate::builtin::Builtin;
 use std::cell::RefCell;
+use std::fs::File;
 use std::io::{pipe, Error, PipeReader, PipeWriter};
 use std::iter::Peekable;
 use std::process::{Command, Stdio};
@@ -13,7 +14,7 @@ pub(crate) struct Parser<'a> {
 }
 
 impl<'a> Parser<'_> {
-    pub fn new(args: Peekable<Args<'a>>) -> Parser {
+    pub fn new(args: Peekable<Args<'a>>) -> Parser<'a> {
         Parser {
             tokens: args,
             expressions: Vec::new(),
@@ -46,12 +47,11 @@ impl<'a> Parser<'_> {
             if let Some(parselet) = Self::prefix_parselet(&prefix_tk) {
                 lhs = (parselet.parse)(self, prefix_tk);
             } else {
-                self.errors.push(format!("Invalid start of expression: {:?}", prefix_tk));
-                return Expr::Error;
+                return self.error(format!("Invalid start of expression: {:?}", prefix_tk));
             }
 
             while let Some(infix_tk) = self.peek_token() {
-                if let Some(parselet) = Self::infix_parselet(&infix_tk)
+                if let Some(parselet) = Self::infix_parselet(infix_tk)
                     && parselet.precedence > min_prec
                 {
                     let tk = self.next_token().unwrap();
@@ -62,8 +62,7 @@ impl<'a> Parser<'_> {
             }
             lhs
         } else {
-            self.errors.push("Invalid start of expression: EOF".to_string());
-            Expr::Error
+            self.error("Invalid start of expression: EOF".to_string())
         }
     }
 
@@ -75,7 +74,7 @@ impl<'a> Parser<'_> {
     }
 
     fn consume(&mut self, condition: fn(&Token) -> bool) -> bool {
-        if self.tokens.peek().is_some_and(|tk| condition(tk)) {
+        if self.tokens.peek().is_some_and(condition) {
             self.tokens.next();
             true
         } else {
@@ -93,20 +92,55 @@ impl<'a> Parser<'_> {
         }
     }
 
+    fn error(&mut self, msg: String) -> Expr {
+        self.errors.push(msg);
+        Expr::Error
+    }
+
     // Any token that can't be at the start of an expression is considered infix
     const fn infix_parselet(tk: &Token) -> Option<InfixParselet> {
         let tp = match tk {
-            Token::RedirectOutToFile => InfixParselet {
+            Token::OverwriteOutToFile => InfixParselet {
                 precedence: 10,
                 parse: |parser, _token, lhs| {
                     let rhs = parser.consume_symbol();
                     if let Some(right) = rhs {
-                        Expr::RedirectOut(Box::new(lhs), right)
+                        Expr::OverwriteOutToFile(Box::new(lhs), right)
                     } else {
-                        parser
-                            .errors
-                            .push("Expected filename after redirect".to_string());
-                        Expr::Error
+                        parser.error("Expected filename after redirect".to_string())
+                    }
+                },
+            },
+            Token::AppendOutToFile => InfixParselet {
+                precedence: 10,
+                parse: |parser, _token, lhs| {
+                    let rhs = parser.consume_symbol();
+                    if let Some(right) = rhs {
+                        Expr::AppendOutToFile(Box::new(lhs), right)
+                    } else {
+                        parser.error("Expected filename after redirect".to_string())
+                    }
+                },
+            },
+            Token::OverwriteErrToFile => InfixParselet {
+                precedence: 10,
+                parse: |parser, _token, lhs| {
+                    let rhs = parser.consume_symbol();
+                    if let Some(right) = rhs {
+                        Expr::OverwriteErrToFile(Box::new(lhs), right)
+                    } else {
+                        parser.error("Expected filename after redirect".to_string())
+                    }
+                },
+            },
+            Token::AppendErrToFile => InfixParselet {
+                precedence: 10,
+                parse: |parser, _token, lhs| {
+                    let rhs = parser.consume_symbol();
+                    if let Some(right) = rhs {
+                        Expr::AppendErrToFile(Box::new(lhs), right)
+                    } else {
+                        parser.error("Expected filename after redirect".to_string())
                     }
                 },
             },
@@ -132,7 +166,7 @@ impl<'a> Parser<'_> {
                     while let Some(arg) = parser.consume_symbol() {
                         arguments.push(arg);
                     }
-                    let mut command = Cmd::new(&token.to_text());
+                    let mut command = Cmd::new(&token.as_text());
                     command.set_args(arguments);
                     Expr::Cmd(command)
                 },
@@ -156,7 +190,10 @@ struct InfixParselet {
 
 pub(crate) enum Expr {
     Cmd(Cmd),
-    RedirectOut(Box<Expr>, String),
+    OverwriteOutToFile(Box<Expr>, String),
+    AppendOutToFile(Box<Expr>, String),  
+    OverwriteErrToFile(Box<Expr>, String),
+    AppendErrToFile(Box<Expr>, String),
     Pipe(Box<Expr>, Box<Expr>),
     Error, // Error is just here to be able to return something. I couldn't be bothered to write proper error handling (yet).
 }
@@ -174,6 +211,7 @@ pub(crate) enum BuiltinStreamTarget {
     BuiltinPipe(Rc<RefCell<String>>), // Doesn't need to be implemented yet: simply create todo!
     Null,                             // To the void
     Pipe(PipeWriter),                 // Piped to the Stdin of the child
+    File(File),
 }
 
 pub(crate) enum BuiltinStreamSource {
@@ -182,6 +220,7 @@ pub(crate) enum BuiltinStreamSource {
     BuiltinPipe(Rc<RefCell<String>>), // Doesn't need to be implemented yet: simply create todo!
     Null,                             // From the void
     Pipe(PipeReader),                 // Get input from this pipe
+    File(File),
 }
 
 pub(crate) enum StreamTarget<'a> {
@@ -189,12 +228,14 @@ pub(crate) enum StreamTarget<'a> {
     InheritStderr,
     Null,
     Child(&'a mut Cmd),
+    File(File),
 }
 pub(crate) enum StreamSource<'a> {
     Inherit,
     Null,
     ChildStdout(&'a mut Cmd),
     ChildStderr(&'a mut Cmd),
+    File(File),
 }
 
 impl Cmd {
@@ -203,8 +244,10 @@ impl Cmd {
             Cmd::Builtin(builtin)
         } else {
             let mut cmd = Command::new(name);
-            cmd.stdin(Stdio::inherit()).stdout(Stdio::inherit()).stderr(Stdio::inherit());
-            Cmd::External(Command::new(name))
+            cmd.stdin(Stdio::inherit())
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit());
+            Cmd::External(cmd)
         }
     }
 
@@ -238,6 +281,7 @@ impl Cmd {
                         }
                         reader.into()
                     }
+                    StreamSource::File(file) => file.into(),
                 };
                 command.stdin(stdio);
             }
@@ -265,6 +309,7 @@ impl Cmd {
                             todo!("Piping from builtin to builtin not supported yet")
                         }
                     },
+                    StreamSource::File(file) => BuiltinStreamSource::File(file),
                 };
                 builtin.set_stdin(source);
             }
@@ -291,6 +336,7 @@ impl Cmd {
                         }
                         writer.into()
                     }
+                    StreamTarget::File(file) => file.into(),
                 };
                 command.stdout(stdio);
             }
@@ -309,6 +355,7 @@ impl Cmd {
                             todo!("Piping from builtin to builtin not supported yet")
                         }
                     },
+                    StreamTarget::File(file) => BuiltinStreamTarget::File(file),
                 };
                 builtin.set_stdout(mapped);
             }
@@ -335,6 +382,7 @@ impl Cmd {
                         }
                         writer.into()
                     }
+                    StreamTarget::File(file) => file.into(),
                 };
                 command.stderr(stdio);
             }
@@ -353,6 +401,7 @@ impl Cmd {
                             todo!("Piping from builtin to builtin not supported yet")
                         }
                     },
+                    StreamTarget::File(file) => BuiltinStreamTarget::File(file),
                 };
                 builtin.set_stderr(mapped);
             }

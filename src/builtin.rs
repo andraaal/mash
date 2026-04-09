@@ -68,39 +68,42 @@ impl Builtin {
         match self.typ {
             BuiltinType::Exit => std::process::exit(0),
             BuiltinType::Echo => {
-                self.write_stdout(self.args.join(" ").as_str())?;
+                let mut out = self.args.join(" ");
+                out.push('\n');
+                self.write_stdout(out.as_str())?;
             }
             BuiltinType::Pwd => {
                 if let Ok(current) = std::env::current_dir() {
-                    self.write_stdout(current.display().to_string().as_str())?;
+                    self.write_stdout(&format!("{}\n", current.display()))?;
                 } else {
-                    self.write_stderr("Current working directory either doesn't exist or you have insufficient privileges")?;
+                    self.write_stderr("Current working directory either doesn't exist or you have insufficient privileges\n")?;
                 };
             }
             BuiltinType::Cd => {
-                if let Some(next) = self.args.get(0) {
+                if let Some(next) = self.args.first() {
                     let target_path = &Self::create_path(next);
                     if std::env::set_current_dir(target_path).is_err() {
-                        let message = format!("cd: {}: No such file or directory", target_path.display());
+                        let message =
+                            format!("cd: {}: No such file or directory\n", target_path.display());
                         self.write_stderr(&message)?;
                     }
                 } else {
-                    self.write_stderr("Cd requires at least one argument. If more than one are provided all but the first are discarded.")?;
+                    self.write_stderr("Cd requires at least one argument. If more than one are provided all but the first are discarded.\n")?;
                 }
             }
             BuiltinType::Type => {
-                if let Some(next) = self.args.get(0) {
+                if let Some(next) = self.args.first() {
                     if BuiltinType::from_str(next).is_ok() {
-                        let message = format!("{} is a shell builtin", next);
+                        let message = format!("{} is a shell builtin\n", next);
                         self.write_stdout(&message)?;
                     } else if let Some(path) = Self::search_for_executable(next) {
-                        self.write_stdout(path.display().to_string().as_str())?;
+                        self.write_stdout(&format!("{}\n", path.display()))?;
                     } else {
-                        let message = format!("{}: not found", next);
+                        let message = format!("{}: not found\n", next);
                         self.write_stdout(&message)?;
                     }
                 } else {
-                    self.write_stderr("Type requires at least one argument. If more than one are provided all but the first are discarded.")?;
+                    self.write_stderr("Type requires at least one argument. If more than one are provided all but the first are discarded.\n")?;
                 }
             }
         }
@@ -111,9 +114,15 @@ impl Builtin {
         match self.stdout_target {
             BuiltinStreamTarget::InheritStdout => std::io::stdout().write_all(string.as_bytes())?,
             BuiltinStreamTarget::InheritStderr => std::io::stderr().write_all(string.as_bytes())?,
-            BuiltinStreamTarget::BuiltinPipe(_) => todo!("Builtin to builtin piping is not supported yet"),
+            BuiltinStreamTarget::BuiltinPipe(ref target) => {
+                target.borrow_mut().replace_range(0..string.len(), &string)
+            }
+
             BuiltinStreamTarget::Null => {}
             BuiltinStreamTarget::Pipe(ref mut target) => target.write_all(string.as_bytes())?,
+            BuiltinStreamTarget::File(ref mut file) => {
+                file.write_all(string.as_bytes())?;
+            }
         }
         Ok(())
     }
@@ -122,9 +131,14 @@ impl Builtin {
         match self.stderr_target {
             BuiltinStreamTarget::InheritStdout => std::io::stdout().write_all(string.as_bytes())?,
             BuiltinStreamTarget::InheritStderr => std::io::stderr().write_all(string.as_bytes())?,
-            BuiltinStreamTarget::BuiltinPipe(_) => todo!("Builtin to builtin piping is not supported yet"),
+            BuiltinStreamTarget::BuiltinPipe(ref target) => {
+                target.borrow_mut().replace_range(0..string.len(), &string)
+            }
             BuiltinStreamTarget::Null => {}
             BuiltinStreamTarget::Pipe(ref mut target) => target.write_all(string.as_bytes())?,
+            BuiltinStreamTarget::File(ref mut file) => {
+                file.write_all(string.as_bytes())?;
+            }
         }
         Ok(())
     }

@@ -2,6 +2,7 @@ mod args;
 mod builtin;
 mod cmd;
 
+use std::fs::OpenOptions;
 use crate::args::Args;
 use crate::cmd::{Cmd, Expr, Parser, StreamTarget};
 use std::io::{self, Write};
@@ -51,8 +52,29 @@ fn execute(stmt: Expr) -> Result<Cmd, std::io::Error> {
         Expr::Cmd(cmd) => {
             Ok(cmd)
         }
-        Expr::RedirectOut(_, _) => {
-            todo!()
+        Expr::OverwriteOutToFile(cmd, target_file) => {
+            let mut command = execute(*cmd)?;
+            let file = OpenOptions::new().write(true).create(true).truncate(true).open(&target_file)?;
+            command.set_stdout(StreamTarget::File(file))?;
+            Ok(command)
+        }
+        Expr::AppendOutToFile(cmd, target_file) => {
+            let mut command = execute(*cmd)?;
+            let file = OpenOptions::new().append(true).create(true).open(&target_file)?;
+            command.set_stdout(StreamTarget::File(file))?;
+            Ok(command)
+        }
+        Expr::OverwriteErrToFile(cmd, target_file) => {
+            let mut command = execute(*cmd)?;
+            let file = OpenOptions::new().write(true).create(true).truncate(true).open(&target_file)?;
+            command.set_stderr(StreamTarget::File(file))?;
+            Ok(command)
+        }
+        Expr::AppendErrToFile(cmd, target_file) => {
+            let mut command = execute(*cmd)?;
+            let file = OpenOptions::new().append(true).create(true).open(&target_file)?;
+            command.set_stderr(StreamTarget::File(file))?;
+            Ok(command)
         }
         Expr::Error => {
             panic!("Compiler's fault: Should not execute if there are any error tokens.")
