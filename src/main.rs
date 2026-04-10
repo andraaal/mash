@@ -1,14 +1,17 @@
 mod args;
 mod builtin;
 mod cmd;
+mod parser;
 
-use std::fs::OpenOptions;
 use crate::args::Args;
-use crate::cmd::{Cmd, Expr, Parser, StreamTarget};
+use crate::cmd::{Cmd, StreamTarget};
+use crate::parser::{Expr, Parser};
+use std::fs::OpenOptions;
 use std::io::{self, Write};
 
 fn main() {
-    println!("$$\\      $$\\  $$$$$$\\   $$$$$$\\  $$\\   $$\\
+    println!(
+        "$$\\      $$\\  $$$$$$\\   $$$$$$\\  $$\\   $$\\
 $$$\\    $$$ |$$  __$$\\ $$  __$$\\ $$ |  $$ |
 $$$$\\  $$$$ |$$ /  $$ |$$ /  \\__|$$ |  $$ |
 $$\\$$\\$$ $$ |$$$$$$$$ |\\$$$$$$\\  $$$$$$$$ |
@@ -18,7 +21,8 @@ $$ | \\_/ $$ |$$ |  $$ |\\$$$$$$  |$$ |  $$ |
 \\__|     \\__|\\__|  \\__| \\______/ \\__|  \\__|
 
 
-");
+"
+    );
     loop {
         print!("$ ");
         io::stdout().flush().unwrap();
@@ -49,30 +53,42 @@ $$ | \\_/ $$ |$$ |  $$ |\\$$$$$$  |$$ |  $$ |
 
 fn execute(stmt: Expr) -> Result<Cmd, std::io::Error> {
     match stmt {
-        Expr::Cmd(cmd) => {
-            Ok(cmd)
-        }
+        Expr::Cmd(cmd) => Ok(cmd),
         Expr::OverwriteOutToFile(cmd, target_file) => {
             let mut command = execute(*cmd)?;
-            let file = OpenOptions::new().write(true).create(true).truncate(true).open(&target_file)?;
+            let file = OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(&target_file)?;
             command.set_stdout(StreamTarget::File(file))?;
             Ok(command)
         }
         Expr::AppendOutToFile(cmd, target_file) => {
             let mut command = execute(*cmd)?;
-            let file = OpenOptions::new().append(true).create(true).open(&target_file)?;
+            let file = OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open(&target_file)?;
             command.set_stdout(StreamTarget::File(file))?;
             Ok(command)
         }
         Expr::OverwriteErrToFile(cmd, target_file) => {
             let mut command = execute(*cmd)?;
-            let file = OpenOptions::new().write(true).create(true).truncate(true).open(&target_file)?;
+            let file = OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(&target_file)?;
             command.set_stderr(StreamTarget::File(file))?;
             Ok(command)
         }
         Expr::AppendErrToFile(cmd, target_file) => {
             let mut command = execute(*cmd)?;
-            let file = OpenOptions::new().append(true).create(true).open(&target_file)?;
+            let file = OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open(&target_file)?;
             command.set_stderr(StreamTarget::File(file))?;
             Ok(command)
         }
@@ -90,5 +106,3 @@ fn execute(stmt: Expr) -> Result<Cmd, std::io::Error> {
         }
     }
 }
-
-
