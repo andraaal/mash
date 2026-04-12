@@ -1,9 +1,10 @@
+use crate::builtin::Builtin;
 use std::cell::RefCell;
 use std::fs::File;
 use std::io::{pipe, Error, PipeReader, PipeWriter};
 use std::process::{Command, Stdio};
 use std::rc::Rc;
-use crate::builtin::Builtin;
+use crate::RLEditor;
 
 // Define the target of the streams here; then start the process to convert into a Cmd
 pub(crate) enum Cmd {
@@ -102,8 +103,11 @@ impl Cmd {
                             external.stdout(writer);
                             BuiltinStreamSource::Pipe(reader)
                         }
-                        Cmd::Builtin(_builtin) => {
-                            todo!("Piping from builtin to builtin not supported yet")
+                        Cmd::Builtin(source_builtin) => {
+                            let pipe = Rc::new(RefCell::new(String::new()));
+                            source_builtin
+                                .set_stdout(BuiltinStreamTarget::BuiltinPipe(pipe.clone()));
+                            BuiltinStreamSource::BuiltinPipe(pipe)
                         }
                     },
                     StreamSource::ChildStderr(child) => match child {
@@ -112,8 +116,11 @@ impl Cmd {
                             external.stderr(writer);
                             BuiltinStreamSource::Pipe(reader)
                         }
-                        Cmd::Builtin(_builtin) => {
-                            todo!("Piping from builtin to builtin not supported yet")
+                        Cmd::Builtin(source_builtin) => {
+                            let pipe = Rc::new(RefCell::new(String::new()));
+                            source_builtin
+                                .set_stderr(BuiltinStreamTarget::BuiltinPipe(pipe.clone()));
+                            BuiltinStreamSource::BuiltinPipe(pipe)
                         }
                     },
                     StreamSource::File(file) => BuiltinStreamSource::File(file),
@@ -127,43 +134,11 @@ impl Cmd {
     pub(crate) fn set_stdout(&mut self, target: StreamTarget) -> Result<(), Error> {
         match self {
             Cmd::External(command) => {
-                let stdio = match target {
-                    StreamTarget::InheritStdout => Stdio::inherit(),
-                    StreamTarget::InheritStderr => std::io::stderr().into(),
-                    StreamTarget::Null => Stdio::null(),
-                    StreamTarget::Child(child) => {
-                        let (reader, writer): (PipeReader, PipeWriter) = pipe()?;
-                        match child {
-                            Cmd::External(external) => {
-                                external.stdin(reader);
-                            }
-                            Cmd::Builtin(builtin) => {
-                                builtin.set_stdin(BuiltinStreamSource::Pipe(reader));
-                            }
-                        }
-                        writer.into()
-                    }
-                    StreamTarget::File(file) => file.into(),
-                };
+                let stdio = Self::create_external_target(target)?;
                 command.stdout(stdio);
             }
             Cmd::Builtin(builtin) => {
-                let mapped = match target {
-                    StreamTarget::InheritStdout => BuiltinStreamTarget::InheritStdout,
-                    StreamTarget::InheritStderr => BuiltinStreamTarget::InheritStderr,
-                    StreamTarget::Null => BuiltinStreamTarget::Null,
-                    StreamTarget::Child(child) => match child {
-                        Cmd::External(external) => {
-                            let (reader, writer): (PipeReader, PipeWriter) = pipe()?;
-                            external.stdin(reader);
-                            BuiltinStreamTarget::Pipe(writer)
-                        }
-                        Cmd::Builtin(_builtin) => {
-                            todo!("Piping from builtin to builtin not supported yet")
-                        }
-                    },
-                    StreamTarget::File(file) => BuiltinStreamTarget::File(file),
-                };
+                let mapped = Self::create_builtin_target(target)?;
                 builtin.set_stdout(mapped);
             }
         }
@@ -173,62 +148,77 @@ impl Cmd {
     pub(crate) fn set_stderr(&mut self, target: StreamTarget) -> Result<(), Error> {
         match self {
             Cmd::External(command) => {
-                let stdio: Stdio = match target {
-                    StreamTarget::InheritStdout => std::io::stdout().into(),
-                    StreamTarget::InheritStderr => Stdio::inherit(),
-                    StreamTarget::Null => Stdio::null(),
-                    StreamTarget::Child(child) => {
-                        let (reader, writer): (PipeReader, PipeWriter) = pipe()?;
-                        match child {
-                            Cmd::External(external) => {
-                                external.stdin(reader);
-                            }
-                            Cmd::Builtin(builtin) => {
-                                builtin.set_stdin(BuiltinStreamSource::Pipe(reader));
-                            }
-                        }
-                        writer.into()
-                    }
-                    StreamTarget::File(file) => file.into(),
-                };
+                let stdio: Stdio = Self::create_external_target(target)?;
                 command.stderr(stdio);
             }
             Cmd::Builtin(builtin) => {
-                let mapped = match target {
-                    StreamTarget::InheritStdout => BuiltinStreamTarget::InheritStdout,
-                    StreamTarget::InheritStderr => BuiltinStreamTarget::InheritStderr,
-                    StreamTarget::Null => BuiltinStreamTarget::Null,
-                    StreamTarget::Child(child) => match child {
-                        Cmd::External(external) => {
-                            let (reader, writer): (PipeReader, PipeWriter) = pipe()?;
-                            external.stdin(reader);
-                            BuiltinStreamTarget::Pipe(writer)
-                        }
-                        Cmd::Builtin(_builtin) => {
-                            todo!("Piping from builtin to builtin not supported yet")
-                        }
-                    },
-                    StreamTarget::File(file) => BuiltinStreamTarget::File(file),
-                };
+                let mapped = Self::create_builtin_target(target)?;
                 builtin.set_stderr(mapped);
             }
         }
         Ok(())
     }
 
-    pub(crate) fn wait(&mut self) -> Result<(), Error> {
+    fn create_external_target(target: StreamTarget) -> Result<Stdio, Error> {
+        let res = match target {
+            StreamTarget::InheritStdout => std::io::stdout().into(),
+            StreamTarget::InheritStderr => std::io::stderr().into(),
+            StreamTarget::Null => Stdio::null(),
+            StreamTarget::Child(child) => {
+                let (reader, writer): (PipeReader, PipeWriter) = pipe()?;
+                match child {
+                    Cmd::External(external) => {
+                        external.stdin(reader);
+                    }
+                    Cmd::Builtin(builtin) => {
+                        builtin.set_stdin(BuiltinStreamSource::Pipe(reader));
+                    }
+                }
+                writer.into()
+            }
+            StreamTarget::File(file) => file.into(),
+        };
+        Ok(res)
+    }
+
+    fn create_builtin_target(target: StreamTarget) -> Result<BuiltinStreamTarget, Error> {
+        let res = match target {
+            StreamTarget::InheritStdout => BuiltinStreamTarget::InheritStdout,
+            StreamTarget::InheritStderr => BuiltinStreamTarget::InheritStderr,
+            StreamTarget::Null => BuiltinStreamTarget::Null,
+            StreamTarget::Child(child) => match child {
+                Cmd::External(external) => {
+                    let (reader, writer): (PipeReader, PipeWriter) = pipe()?;
+                    external.stdin(reader);
+                    BuiltinStreamTarget::Pipe(writer)
+                }
+                Cmd::Builtin(target_builtin) => {
+                    let pipe = Rc::new(RefCell::new(String::new()));
+                    target_builtin.set_stdin(BuiltinStreamSource::BuiltinPipe(pipe.clone()));
+                    BuiltinStreamTarget::BuiltinPipe(pipe)
+                }
+            },
+            StreamTarget::File(file) => BuiltinStreamTarget::File(file),
+        };
+        Ok(res)
+    }
+
+    /// Executes the Cmd synchronously and waits for it to return.
+    pub(crate) fn wait(&mut self, rl: &RLEditor) -> Result<(), Error> {
         match self {
             Cmd::External(command) => {
                 command.output()?;
             }
             Cmd::Builtin(builtin) => {
-                builtin.execute()?;
+                builtin.execute(rl)?;
             }
         };
         Ok(())
     }
+    
 
-    pub(crate) fn set_args(&mut self, args: Vec<String>) {
+    /// Append args to the list of arguments of the Cmd
+    pub(crate) fn set_args(&mut self, args: &mut Vec<String>) {
         match self {
             Cmd::External(command) => {
                 command.args(args);

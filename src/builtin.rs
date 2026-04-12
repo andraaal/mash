@@ -4,6 +4,7 @@ use std::io::Error;
 use std::io::Write;
 use std::path::PathBuf;
 use std::str::FromStr;
+use crate::RLEditor;
 
 pub(crate) enum BuiltinType {
     Exit,
@@ -11,6 +12,7 @@ pub(crate) enum BuiltinType {
     Type,
     Pwd,
     Cd,
+    History,
 }
 
 impl FromStr for BuiltinType {
@@ -18,6 +20,7 @@ impl FromStr for BuiltinType {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
+            "history" => Ok(BuiltinType::History),
             "exit" => Ok(BuiltinType::Exit),
             "echo" => Ok(BuiltinType::Echo),
             "type" => Ok(BuiltinType::Type),
@@ -60,11 +63,11 @@ impl Builtin {
         self.stderr_target = target;
     }
 
-    pub(crate) fn set_args(&mut self, args: Vec<String>) {
-        self.args = args;
+    pub(crate) fn set_args(&mut self, args: &mut Vec<String>) {
+        self.args.append(args);
     }
 
-    pub(crate) fn execute(&mut self) -> Result<(), Error> {
+    pub(crate) fn execute(&mut self, rl: &RLEditor) -> Result<(), Error> {
         match self.typ {
             BuiltinType::Exit => std::process::exit(0),
             BuiltinType::Echo => {
@@ -106,6 +109,11 @@ impl Builtin {
                     self.write_stderr("Type requires at least one argument. If more than one are provided all but the first are discarded.\n")?;
                 }
             }
+            BuiltinType::History => {
+                for (i, entry) in rl.history().iter().enumerate() {
+                    self.write_stdout(&format!("{:>5}  {}\n", i + 1, entry))?;
+                }
+            }
         }
         Ok(())
     }
@@ -115,7 +123,7 @@ impl Builtin {
             BuiltinStreamTarget::InheritStdout => std::io::stdout().write_all(string.as_bytes())?,
             BuiltinStreamTarget::InheritStderr => std::io::stderr().write_all(string.as_bytes())?,
             BuiltinStreamTarget::BuiltinPipe(ref target) => {
-                target.borrow_mut().replace_range(0..string.len(), &string)
+                target.borrow_mut().replace_range(.., &string)
             }
 
             BuiltinStreamTarget::Null => {}
@@ -132,7 +140,7 @@ impl Builtin {
             BuiltinStreamTarget::InheritStdout => std::io::stdout().write_all(string.as_bytes())?,
             BuiltinStreamTarget::InheritStderr => std::io::stderr().write_all(string.as_bytes())?,
             BuiltinStreamTarget::BuiltinPipe(ref target) => {
-                target.borrow_mut().replace_range(0..string.len(), &string)
+                target.borrow_mut().replace_range(.., &string)
             }
             BuiltinStreamTarget::Null => {}
             BuiltinStreamTarget::Pipe(ref mut target) => target.write_all(string.as_bytes())?,

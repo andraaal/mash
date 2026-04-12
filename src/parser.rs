@@ -168,7 +168,7 @@ impl<'a> Parser<'_> {
                         arguments.push(arg);
                     }
                     let mut command = Cmd::new(&token.as_text());
-                    command.set_args(arguments);
+                    command.set_args(&mut arguments);
                     Expr::Cmd(command)
                 },
             },
