@@ -204,7 +204,7 @@ impl Cmd {
     }
 
     /// Executes the Cmd synchronously and waits for it to return.
-    pub(crate) fn wait(&mut self, rl: &RLEditor) -> Result<(), Error> {
+    pub(crate) fn wait(&mut self, rl: &mut RLEditor) -> Result<(), Error> {
         match self {
             Cmd::External(command) => {
                 command.output()?;

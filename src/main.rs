@@ -2,17 +2,19 @@ mod args;
 mod builtin;
 mod cmd;
 mod parser;
+mod completion;
 
 use crate::args::Args;
 use crate::cmd::{Cmd, StreamTarget};
 use crate::parser::{Expr, Parser};
 use rustyline::history::DefaultHistory;
-use rustyline::{DefaultEditor, Editor};
+use rustyline::Editor;
 use std::fs::OpenOptions;
 use std::io::{self, Write};
 use rustyline::error::ReadlineError;
+use crate::completion::ShellHelper;
 
-pub(crate) type RLEditor = Editor<(), DefaultHistory>;
+pub(crate) type RLEditor = Editor<ShellHelper, DefaultHistory>;
 const HISTORY_FILE: &str = ".mash_history";
 
 fn main() {
@@ -31,9 +33,10 @@ $$ | \\_/ $$ |$$ |  $$ |\\$$$$$$  |$$ |  $$ |
     );
     io::stdout().flush().unwrap();
 
-    let mut rl: RLEditor = DefaultEditor::new().unwrap();
+    let mut rl: RLEditor = Editor::new().unwrap();
+    rl.set_helper(Some(ShellHelper::new()));
     let _ = rl.load_history(HISTORY_FILE);
-    
+
     loop {
         match rl.readline("$ ") {
             Ok(line) => {
@@ -42,14 +45,14 @@ $$ | \\_/ $$ |$$ |  $$ |\\$$$$$$  |$$ |  $$ |
                     continue;
                 }
                 let _ = rl.add_history_entry(trimmed);
-                
+
                 let words = Args::new(&trimmed);
                 let peek_args = words.peekable();
                 let parser = Parser::new(peek_args);
                 match parser.compile() {
                     Ok(exprs) => {
                         for expr in exprs {
-                            if let Err(err) = execute(expr, &mut rl).unwrap().wait(&rl) {
+                            if let Err(err) = execute(expr, &mut rl).unwrap().wait(&mut rl) {
                                 eprintln!("{}", err);
                             }
                         }
@@ -78,7 +81,7 @@ $$ | \\_/ $$ |$$ |  $$ |\\$$$$$$  |$$ |  $$ |
     }
 }
 
-fn execute(stmt: Expr, rl: & RLEditor) -> Result<Cmd, std::io::Error> {
+fn execute(stmt: Expr, rl: &mut RLEditor) -> Result<Cmd, std::io::Error> {
     match stmt {
         Expr::Cmd(cmd) => Ok(cmd),
         Expr::OverwriteOutToFile(cmd, target_file) => {

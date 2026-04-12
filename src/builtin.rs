@@ -1,10 +1,11 @@
 use crate::cmd::{BuiltinStreamSource, BuiltinStreamTarget};
+use crate::{RLEditor, HISTORY_FILE};
 use faccess::PathExt;
 use std::io::Error;
 use std::io::Write;
 use std::path::PathBuf;
 use std::str::FromStr;
-use crate::RLEditor;
+use rustyline::history::History;
 
 pub(crate) enum BuiltinType {
     Exit,
@@ -67,9 +68,12 @@ impl Builtin {
         self.args.append(args);
     }
 
-    pub(crate) fn execute(&mut self, rl: &RLEditor) -> Result<(), Error> {
+    pub(crate) fn execute(&mut self, rl: &mut RLEditor) -> Result<(), Error> {
         match self.typ {
-            BuiltinType::Exit => std::process::exit(0),
+            BuiltinType::Exit => {
+                let _ = rl.save_history(HISTORY_FILE);
+                std::process::exit(0);
+            }
             BuiltinType::Echo => {
                 let mut out = self.args.join(" ");
                 out.push('\n');
@@ -110,7 +114,9 @@ impl Builtin {
                 }
             }
             BuiltinType::History => {
-                for (i, entry) in rl.history().iter().enumerate() {
+                let skip = self.args.first().map_or(0, |c| c.parse().unwrap_or(0));
+                let history = rl.history().iter().skip(rl.history().len() - skip);
+                for (i, entry) in history.enumerate() {
                     self.write_stdout(&format!("{:>5}  {}\n", i + 1, entry))?;
                 }
             }
