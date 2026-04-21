@@ -1,11 +1,11 @@
 use crate::cmd::{BuiltinStreamSource, BuiltinStreamTarget};
-use crate::{RLEditor, HISTORY_FILE};
+use crate::{exit_shell, ShellState};
 use faccess::PathExt;
+use rustyline::history::History;
 use std::io::Error;
 use std::io::Write;
 use std::path::PathBuf;
 use std::str::FromStr;
-use rustyline::history::History;
 
 pub(crate) enum BuiltinType {
     Exit,
@@ -14,6 +14,8 @@ pub(crate) enum BuiltinType {
     Pwd,
     Cd,
     History,
+    Alias,
+    Unalias,
 }
 
 impl FromStr for BuiltinType {
@@ -27,6 +29,8 @@ impl FromStr for BuiltinType {
             "type" => Ok(BuiltinType::Type),
             "pwd" => Ok(BuiltinType::Pwd),
             "cd" => Ok(BuiltinType::Cd),
+            "alias" => Ok(BuiltinType::Alias),
+            "unalias" => Ok(BuiltinType::Unalias),
             _ => Err(()),
         }
     }
@@ -68,11 +72,10 @@ impl Builtin {
         self.args.append(args);
     }
 
-    pub(crate) fn execute(&mut self, rl: &mut RLEditor) -> Result<(), Error> {
+    pub(crate) fn execute(&mut self, state: &mut ShellState) -> Result<(), Error> {
         match self.typ {
             BuiltinType::Exit => {
-                let _ = rl.save_history(HISTORY_FILE);
-                std::process::exit(0);
+                exit_shell(state);
             }
             BuiltinType::Echo => {
                 let mut out = self.args.join(" ");
@@ -114,10 +117,34 @@ impl Builtin {
                 }
             }
             BuiltinType::History => {
-                let skip = self.args.first().map_or(0, |c| c.parse().unwrap_or(0));
-                let history = rl.history().iter().skip(rl.history().len() - skip);
+                let see = self.args.first().map_or(state.rl.history().len(), |c| {
+                    c.parse().unwrap_or(state.rl.history().len())
+                });
+                let history = state
+                    .rl
+                    .history()
+                    .iter()
+                    .skip(state.rl.history().len().saturating_sub(see));
                 for (i, entry) in history.enumerate() {
                     self.write_stdout(&format!("{:>5}  {}\n", i + 1, entry))?;
+                }
+            }
+            BuiltinType::Alias => {
+                if let (Some(alias), Some(replacement)) = (self.args.first(), self.args.get(1)) {
+                    if alias.contains('=') {
+                        self.write_stderr("Alias can't contain '='.")?;
+                    } else {
+                        state.aliases.insert(alias.clone(), replacement.clone());
+                    }
+                } else {
+                    self.write_stderr("Alias requires at least two arguments.\n")?;
+                }
+            }
+            BuiltinType::Unalias => {
+                if let Some(alias) = self.args.first() {
+                    state.aliases.remove(alias);
+                } else {
+                    self.write_stderr("Unalias requires one argument.\n")?;
                 }
             }
         }
@@ -125,32 +152,23 @@ impl Builtin {
     }
 
     fn write_stdout(&mut self, string: &str) -> Result<(), Error> {
-        match self.stdout_target {
-            BuiltinStreamTarget::InheritStdout => std::io::stdout().write_all(string.as_bytes())?,
-            BuiltinStreamTarget::InheritStderr => std::io::stderr().write_all(string.as_bytes())?,
-            BuiltinStreamTarget::BuiltinPipe(ref target) => {
-                target.borrow_mut().replace_range(.., &string)
-            }
-
-            BuiltinStreamTarget::Null => {}
-            BuiltinStreamTarget::Pipe(ref mut target) => target.write_all(string.as_bytes())?,
-            BuiltinStreamTarget::File(ref mut file) => {
-                file.write_all(string.as_bytes())?;
-            }
-        }
-        Ok(())
+        Self::write_out(&mut self.stdout_target, string)
     }
 
     fn write_stderr(&mut self, string: &str) -> Result<(), Error> {
-        match self.stderr_target {
+        Self::write_out(&mut self.stderr_target, string)
+    }
+
+    fn write_out(target: &mut BuiltinStreamTarget, string: &str) -> Result<(), Error> {
+        match target {
             BuiltinStreamTarget::InheritStdout => std::io::stdout().write_all(string.as_bytes())?,
             BuiltinStreamTarget::InheritStderr => std::io::stderr().write_all(string.as_bytes())?,
-            BuiltinStreamTarget::BuiltinPipe(ref target) => {
-                target.borrow_mut().replace_range(.., &string)
+            BuiltinStreamTarget::BuiltinPipe(target) => {
+                target.borrow_mut().replace_range(.., string)
             }
             BuiltinStreamTarget::Null => {}
-            BuiltinStreamTarget::Pipe(ref mut target) => target.write_all(string.as_bytes())?,
-            BuiltinStreamTarget::File(ref mut file) => {
+            BuiltinStreamTarget::Pipe(target) => target.write_all(string.as_bytes())?,
+            BuiltinStreamTarget::File(file) => {
                 file.write_all(string.as_bytes())?;
             }
         }
@@ -158,7 +176,7 @@ impl Builtin {
     }
 
     fn search_for_executable(name: &str) -> Option<PathBuf> {
-        let path_var = std::env::var("PATH").unwrap();
+        let path_var = std::env::var("PATH").unwrap_or_default();
 
         for path_str in path_var.split(":") {
             let path = PathBuf::new().join(format!("{}/{}", path_str, name).as_str());

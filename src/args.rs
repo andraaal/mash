@@ -1,8 +1,13 @@
-use crate::args::Token::{AppendErrToFile, AppendOutToFile, OverwriteErrToFile, OverwriteOutToFile, Symbol};
+use crate::args::Token::{
+    AppendErrToFile, AppendOutToFile, OverwriteErrToFile, OverwriteOutToFile, Symbol,
+};
+use std::collections::HashMap;
 
 pub(crate) struct Args<'a> {
-    raw: &'a str,
+    raw: String,
     pos: usize,
+    aliases: &'a HashMap<String, String>,
+    queued: Option<Box<Args<'a>>>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -32,13 +37,43 @@ impl<'a> Iterator for Args<'a> {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.next_token()
+        if let Some(ref mut queued) = self.queued {
+            let next = queued.next();
+            if next.is_some() {
+                return next;
+            }
+        }
+
+        let next = self.next_token();
+        match next {
+            Some(Symbol(mut sym)) => {
+                let mut changed = false;
+                for (alias, replacement) in self.aliases.iter() {
+                    if sym == *alias {
+                        sym = replacement.clone();
+                        changed = true;
+                    }
+                }
+                if changed {
+                    self.queued = Some(Box::new(Args::new(sym, self.aliases)));
+                    self.next()
+                } else {
+                    Some(Symbol(sym))
+                }
+            }
+            other => other,
+        }
     }
 }
 
 impl<'a> Args<'a> {
-    pub(crate) fn new(raw: &'a str) -> Self {
-        Self { raw, pos: 0 }
+    pub(crate) fn new(raw: String, aliases: &'a HashMap<String, String>) -> Self {
+        Self {
+            raw,
+            pos: 0,
+            aliases,
+            queued: None,
+        }
     }
 
     fn next_token(&mut self) -> Option<Token> {
@@ -111,31 +146,31 @@ impl<'a> Args<'a> {
                         if segments.is_empty() {
                             match b {
                                 b'>' => {
-                                    return if bytes[self.pos + 1] == b'>' {
+                                    return if bytes.get(self.pos + 1) == Some(&b'>') {
                                         self.pos += 2;
                                         Some(AppendOutToFile)
                                     } else {
                                         self.pos += 1;
                                         Some(OverwriteOutToFile)
-                                    }
+                                    };
                                 }
-                                b'1' if bytes[self.pos + 1] == b'>' => {
-                                    return if bytes[self.pos + 2] == b'>' {
+                                b'1' if bytes.get(self.pos + 1) == Some(&b'>') => {
+                                    return if bytes.get(self.pos + 2) == Some(&b'>') {
                                         self.pos += 3;
                                         Some(AppendOutToFile)
                                     } else {
                                         self.pos += 2;
                                         Some(OverwriteOutToFile)
-                                    }
+                                    };
                                 }
-                                b'2' if bytes[self.pos + 1] == b'>' => {
-                                    return if bytes[self.pos + 2] == b'>' {
+                                b'2' if bytes.get(self.pos + 1) == Some(&b'>') => {
+                                    return if bytes.get(self.pos + 2) == Some(&b'>') {
                                         self.pos += 3;
                                         Some(AppendErrToFile)
                                     } else {
                                         self.pos += 2;
                                         Some(OverwriteErrToFile)
-                                    }
+                                    };
                                 }
                                 b'|' => {
                                     self.pos += 1;

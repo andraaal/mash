@@ -1,19 +1,18 @@
 use crate::builtin::Builtin;
+use crate::ShellState;
 use std::cell::RefCell;
 use std::fs::File;
 use std::io::{pipe, Error, PipeReader, PipeWriter};
 use std::process::{Command, Stdio};
 use std::rc::Rc;
-use crate::RLEditor;
 
-// Define the target of the streams here; then start the process to convert into a Cmd
 pub(crate) enum Cmd {
     External(Command),
     Builtin(Builtin),
 }
 
+// Internal Stream Target
 pub(crate) enum BuiltinStreamTarget {
-    // Internal Stream Target
     InheritStdout,                    // Piped to the Stdout of the parent process
     InheritStderr,                    // Piped to the Stderr of the parent process
     BuiltinPipe(Rc<RefCell<String>>), // Just written to the shared string
@@ -22,8 +21,9 @@ pub(crate) enum BuiltinStreamTarget {
     File(File),
 }
 
+// Internal Stream Source
+#[expect(dead_code)]
 pub(crate) enum BuiltinStreamSource {
-    // Internal Stream Source
     Inherit,                          // Piped from the Stdin of the parent process
     BuiltinPipe(Rc<RefCell<String>>), // Just read from the shared string
     Null,                             // From the void
@@ -31,6 +31,7 @@ pub(crate) enum BuiltinStreamSource {
     File(File),
 }
 
+#[expect(dead_code)]
 pub(crate) enum StreamTarget<'a> {
     InheritStdout,
     InheritStderr,
@@ -38,6 +39,8 @@ pub(crate) enum StreamTarget<'a> {
     Child(&'a mut Cmd),
     File(File),
 }
+
+#[expect(dead_code)]
 pub(crate) enum StreamSource<'a> {
     Inherit,
     Null,
@@ -59,6 +62,7 @@ impl Cmd {
         }
     }
 
+    #[expect(dead_code)]
     pub(crate) fn set_stdin(&mut self, target: StreamSource) -> Result<(), Error> {
         match self {
             Cmd::External(command) => {
@@ -204,13 +208,13 @@ impl Cmd {
     }
 
     /// Executes the Cmd synchronously and waits for it to return.
-    pub(crate) fn wait(&mut self, rl: &mut RLEditor) -> Result<(), Error> {
+    pub(crate) fn wait(&mut self, state: &mut ShellState) -> Result<(), Error> {
         match self {
             Cmd::External(command) => {
                 command.output()?;
             }
             Cmd::Builtin(builtin) => {
-                builtin.execute(rl)?;
+                builtin.execute(state)?;
             }
         };
         Ok(())

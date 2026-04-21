@@ -180,6 +180,7 @@ impl<'a> Parser<'_> {
 
 type Precedence = u32;
 struct PrefixParselet {
+    #[expect(dead_code)]
     precedence: Precedence,
     parse: fn(parser: &mut Parser, token: Token) -> Expr,
 }

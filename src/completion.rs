@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use faccess::PathExt;
 use rustyline::completion::{Completer, FilenameCompleter, Pair};
 use rustyline::highlight::Highlighter;
 use rustyline::hint::{Hinter, HistoryHinter};
@@ -24,7 +23,6 @@ impl ShellHelper {
             "history".to_string(),
         ];
 
-        commands.extend(Self::executables_from_path());
         let mut seen = HashSet::new();
         commands.retain(|cmd| seen.insert(cmd.clone()));
 
@@ -33,27 +31,6 @@ impl ShellHelper {
             history_hinter: HistoryHinter {},
             file_completer: FilenameCompleter::new(),
         }
-    }
-
-    fn executables_from_path() -> Vec<String> {
-        let mut out = Vec::new();
-
-        if let Ok(path_var) = std::env::var("PATH") {
-            for dir in std::env::split_paths(&path_var) {
-                if let Ok(entries) = std::fs::read_dir(dir) {
-                    for entry in entries.flatten() {
-                        let path = entry.path();
-                        if path.executable() {
-                            if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-                                out.push(name.to_string());
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        out
     }
 }
 
