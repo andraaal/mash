@@ -1,13 +1,10 @@
 use crate::args::Token::{
     AppendErrToFile, AppendOutToFile, OverwriteErrToFile, OverwriteOutToFile, Symbol,
 };
-use std::collections::HashMap;
 
 pub(crate) struct Args<'a> {
-    raw: String,
+    raw: &'a str,
     pos: usize,
-    aliases: &'a HashMap<String, String>,
-    queued: Option<Box<Args<'a>>>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -37,43 +34,13 @@ impl<'a> Iterator for Args<'a> {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(ref mut queued) = self.queued {
-            let next = queued.next();
-            if next.is_some() {
-                return next;
-            }
-        }
-
-        let next = self.next_token();
-        match next {
-            Some(Symbol(mut sym)) => {
-                let mut changed = false;
-                for (alias, replacement) in self.aliases.iter() {
-                    if sym == *alias {
-                        sym = replacement.clone();
-                        changed = true;
-                    }
-                }
-                if changed {
-                    self.queued = Some(Box::new(Args::new(sym, self.aliases)));
-                    self.next()
-                } else {
-                    Some(Symbol(sym))
-                }
-            }
-            other => other,
-        }
+        self.next_token()
     }
 }
 
 impl<'a> Args<'a> {
-    pub(crate) fn new(raw: String, aliases: &'a HashMap<String, String>) -> Self {
-        Self {
-            raw,
-            pos: 0,
-            aliases,
-            queued: None,
-        }
+    pub(crate) fn new(raw: &'a str) -> Self {
+        Self { raw, pos: 0 }
     }
 
     fn next_token(&mut self) -> Option<Token> {

@@ -1,30 +1,36 @@
 use crate::args::{Args, Token};
 use crate::cmd::Cmd;
+use crate::{ShellState, MAX_ALIAS_DEPTH};
 use std::iter::Peekable;
 
 pub(crate) struct Parser<'a> {
-    tokens: Peekable<Args<'a>>,
     expressions: Vec<Expr>,
     errors: Vec<String>,
+    state: &'a ShellState,
+    queue: Vec<Peekable<Args<'a>>>,
 }
 
 impl<'a> Parser<'_> {
-    pub fn new(args: Peekable<Args<'a>>) -> Parser<'a> {
+    pub fn new(args: Peekable<Args<'a>>, state: &'a ShellState) -> Parser<'a> {
         Parser {
-            tokens: args,
             expressions: Vec::new(),
             errors: Vec::new(),
+            state,
+            queue: vec![args],
         }
     }
     pub fn compile(mut self) -> Result<Vec<Expr>, Vec<String>> {
         let mut next = self.expression();
         self.expressions.push(next);
-        while self.tokens.peek().is_some() {
+        while self.peek_token().is_some() {
             if !self.consume(|tk| match tk {
                 Token::Symbol(sym) => sym == "\n",
                 _ => false,
             }) {
-                let err = self.error("Unexpected start of expression, expected newline or expression seperator".to_string());
+                let err = self.error(
+                    "Unexpected start of expression, expected newline or expression seperator"
+                        .to_string(),
+                );
                 self.expressions.push(err);
                 break;
             }
@@ -43,7 +49,7 @@ impl<'a> Parser<'_> {
     }
 
     fn parse_precedence(&mut self, min_prec: u32) -> Expr {
-        if let Some(prefix_tk) = self.next_token() {
+        if let Some(prefix_tk) = self.next_token_aliased() {
             let mut lhs;
             if let Some(parselet) = Self::prefix_parselet(&prefix_tk) {
                 lhs = (parselet.parse)(self, prefix_tk);
@@ -55,7 +61,7 @@ impl<'a> Parser<'_> {
                 if let Some(parselet) = Self::infix_parselet(infix_tk)
                     && parselet.precedence > min_prec
                 {
-                    let tk = self.next_token().unwrap();
+                    let tk = self.next_token_aliased().unwrap();
                     lhs = (parselet.parse)(self, tk, lhs);
                 } else {
                     break;
@@ -68,15 +74,51 @@ impl<'a> Parser<'_> {
     }
 
     fn next_token(&mut self) -> Option<Token> {
-        self.tokens.next()
-    }
-    fn peek_token(&mut self) -> Option<&Token> {
-        self.tokens.peek()
+        self.trim_queue();
+        let args = self.queue.last_mut()?;
+        args.next()
     }
 
-    fn consume(&mut self, condition: fn(&Token) -> bool) -> bool {
-        if self.tokens.peek().is_some_and(condition) {
-            self.tokens.next();
+    fn trim_queue(&mut self) {
+        while self
+            .queue
+            .last_mut()
+            .is_some_and(|last| last.peek().is_none())
+        {
+            self.queue.pop();
+        }
+    }
+
+    fn next_token_aliased(&mut self) -> Option<Token> {
+        self.trim_queue();
+        let args = self.queue.last_mut()?;
+        let next = args.next();
+        match next {
+            Some(Token::Symbol(sym)) if self.queue.len() <= MAX_ALIAS_DEPTH => {
+                for (alias, replacement) in self.state.aliases.iter() {
+                    if sym == *alias {
+                        self.queue.push(Args::new(replacement).peekable());
+                        return self.next_token_aliased();
+                    }
+                }
+                Some(Token::Symbol(sym))
+            }
+            Some(Token::Symbol(_)) => {
+                eprintln!("Max recursion depth reached; results may be unexpected");
+                next
+            }
+            _ => next,
+        }
+    }
+    fn peek_token(&mut self) -> Option<&mut Token> {
+        self.trim_queue();
+        let args = self.queue.last_mut()?;
+        args.peek_mut()
+    }
+
+    fn consume(&mut self, condition: fn(&mut Token) -> bool) -> bool {
+        if self.peek_token().is_some_and(condition) {
+            self.next_token();
             true
         } else {
             false
@@ -84,7 +126,7 @@ impl<'a> Parser<'_> {
     }
 
     fn consume_symbol(&mut self) -> Option<String> {
-        if let Some(Token::Symbol(symbol)) = self.tokens.peek_mut() {
+        if let Some(Token::Symbol(symbol)) = self.peek_token() {
             let res = Some(std::mem::take(symbol));
             self.next_token();
             res

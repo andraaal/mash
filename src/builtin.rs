@@ -103,7 +103,9 @@ impl Builtin {
             }
             BuiltinType::Type => {
                 if let Some(next) = self.args.first() {
-                    if BuiltinType::from_str(next).is_ok() {
+                    if let Some(val) = state.aliases.get(next) {
+                        self.write_stdout(&format!("{} is a alias for {}\n", next, val))?;
+                    } else if BuiltinType::from_str(next).is_ok() {
                         let message = format!("{} is a shell builtin\n", next);
                         self.write_stdout(&message)?;
                     } else if let Some(path) = Self::search_for_executable(next) {
@@ -135,6 +137,9 @@ impl Builtin {
                         self.write_stderr("Alias can't contain '='.")?;
                     } else {
                         state.aliases.insert(alias.clone(), replacement.clone());
+                        if let Some(helper) = state.rl.helper_mut() {
+                            helper.get_commands_mut().insert(alias.clone());
+                        }
                     }
                 } else {
                     self.write_stderr("Alias requires at least two arguments.\n")?;
@@ -143,6 +148,9 @@ impl Builtin {
             BuiltinType::Unalias => {
                 if let Some(alias) = self.args.first() {
                     state.aliases.remove(alias);
+                    if let Some(helper) = state.rl.helper_mut() {
+                        helper.get_commands_mut().remove(alias);
+                    }
                 } else {
                     self.write_stderr("Unalias requires one argument.\n")?;
                 }
@@ -178,8 +186,8 @@ impl Builtin {
     fn search_for_executable(name: &str) -> Option<PathBuf> {
         let path_var = std::env::var("PATH").unwrap_or_default();
 
-        for path_str in path_var.split(":") {
-            let path = PathBuf::new().join(format!("{}/{}", path_str, name).as_str());
+        for dir_path in std::env::split_paths(&path_var) {
+            let path = dir_path.join(name);
             if path.executable() {
                 return Some(path);
             }

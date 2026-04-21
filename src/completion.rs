@@ -1,30 +1,29 @@
-use std::collections::HashSet;
 use rustyline::completion::{Completer, FilenameCompleter, Pair};
 use rustyline::highlight::Highlighter;
 use rustyline::hint::{Hinter, HistoryHinter};
 use rustyline::line_buffer::LineBuffer;
 use rustyline::validate::Validator;
 use rustyline::{Changeset, Context, Helper};
+use std::collections::HashSet;
 
 pub(crate) struct ShellHelper {
-    commands: Vec<String>,
+    commands: HashSet<String>,
     history_hinter: HistoryHinter,
     file_completer: FilenameCompleter,
 }
 
 impl ShellHelper {
     pub(crate) fn new() -> Self {
-        let mut commands = vec![
-            "exit".to_string(),
-            "echo".to_string(),
-            "type".to_string(),
-            "pwd".to_string(),
-            "cd".to_string(),
-            "history".to_string(),
-        ];
+        let mut commands = HashSet::new();
 
-        let mut seen = HashSet::new();
-        commands.retain(|cmd| seen.insert(cmd.clone()));
+        commands.insert("exit".to_string());
+        commands.insert("echo".to_string());
+        commands.insert("type".to_string());
+        commands.insert("pwd".to_string());
+        commands.insert("cd".to_string());
+        commands.insert("history".to_string());
+        commands.insert("alias".to_string());
+        commands.insert("unalias".to_string());
 
         ShellHelper {
             commands,
@@ -32,12 +31,15 @@ impl ShellHelper {
             file_completer: FilenameCompleter::new(),
         }
     }
+
+    pub(crate) fn get_commands_mut(&mut self) -> &mut HashSet<String> {
+        &mut self.commands
+    }
 }
 
 impl Helper for ShellHelper {}
 impl Highlighter for ShellHelper {}
 impl Validator for ShellHelper {}
-
 
 impl Hinter for ShellHelper {
     type Hint = String;

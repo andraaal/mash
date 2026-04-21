@@ -25,7 +25,7 @@ pub(crate) struct ShellState {
 
 const HISTORY_FILE: &str = ".mash_history";
 const ALIAS_FILE: &str = ".mash_aliases";
-const MAX_ALIAS_DEPTH: i32 = 10;
+const MAX_ALIAS_DEPTH: usize = 10;
 
 fn load_aliases(path: &str) -> HashMap<String, String> {
     let file = match File::open(path) {
@@ -87,13 +87,27 @@ $$ | \\_/ $$ |$$ |  $$ |\\$$$$$$  |$$ |  $$ |
 
 "
     );
-    io::stdout().flush().unwrap();
+    if let Err(e) = io::stdout().flush() {
+        eprintln!("failed to flush stdout: {}", e);
+    }
 
-    let mut rl: RLEditor = Editor::new().unwrap();
-    rl.set_helper(Some(ShellHelper::new()));
-    let _ = rl.load_history(HISTORY_FILE);
+    let mut rl: RLEditor = match Editor::new() {
+        Ok(rl) => rl,
+        Err(e) => {
+            eprintln!("failed to create editor: {}", e);
+            exit(1);
+        }
+    };
 
     let aliases = load_aliases(ALIAS_FILE);
+    let mut helper = ShellHelper::new();
+    let cmds = helper.get_commands_mut();
+    for alias in &aliases {
+        cmds.insert(alias.0.to_owned());
+    }
+
+    rl.set_helper(Some(helper));
+    let _ = rl.load_history(HISTORY_FILE);
     let mut state = ShellState { rl, aliases };
 
     loop {
@@ -105,14 +119,21 @@ $$ | \\_/ $$ |$$ |  $$ |\\$$$$$$  |$$ |  $$ |
                 }
                 let _ = state.rl.add_history_entry(trimmed);
 
-                let words = Args::new(trimmed.to_owned(), &state.aliases);
+                let words = Args::new(trimmed);
                 let peek_args = words.peekable();
-                let parser = Parser::new(peek_args);
+                let parser = Parser::new(peek_args, &state);
                 match parser.compile() {
                     Ok(exprs) => {
                         for expr in exprs {
-                            if let Err(err) = execute(expr, &mut state).unwrap().wait(&mut state) {
-                                eprintln!("{}", err);
+                            match execute(expr, &mut state) {
+                                Ok(mut cmd) => {
+                                    if let Err(e) = cmd.wait(&mut state) {
+                                        eprintln!("{}", e);
+                                    }
+                                }
+                                Err(e) => {
+                                    eprintln!("{}", e);
+                                }
                             }
                         }
                     }
