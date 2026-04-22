@@ -6,6 +6,7 @@ use rustyline::validate::Validator;
 use rustyline::{Changeset, Context, Helper};
 use std::collections::HashSet;
 
+/// ShellHelper configures rustyline with completions.
 pub(crate) struct ShellHelper {
     commands: HashSet<String>,
     history_hinter: HistoryHinter,
@@ -13,6 +14,7 @@ pub(crate) struct ShellHelper {
 }
 
 impl ShellHelper {
+    /// Creates a new ShellHelper.
     pub(crate) fn new() -> Self {
         let mut commands = HashSet::new();
 

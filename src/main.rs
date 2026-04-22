@@ -23,8 +23,11 @@ pub(crate) struct ShellState {
     aliases: HashMap<String, String>,
 }
 
+/// Path to the history file.
 const HISTORY_FILE: &str = ".mash_history";
+/// Path to the alias file.
 const ALIAS_FILE: &str = ".mash_aliases";
+/// Maximum depth for recursive alias resolution.
 const MAX_ALIAS_DEPTH: usize = 10;
 
 fn load_aliases(path: &str) -> HashMap<String, String> {

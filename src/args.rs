@@ -2,11 +2,13 @@ use crate::args::Token::{
     AppendErrToFile, AppendOutToFile, OverwriteErrToFile, OverwriteOutToFile, Symbol,
 };
 
+/// Args is an iterator that turns a &str into Tokens.
 pub(crate) struct Args<'a> {
     raw: &'a str,
     pos: usize,
 }
 
+/// Input text is first parsed into tokens. They roughly correspond to words, with quotations being resolved and a few special cases for syntax.
 #[derive(Debug, PartialEq)]
 pub(crate) enum Token {
     Symbol(String),
@@ -33,12 +35,14 @@ impl Token {
 impl<'a> Iterator for Args<'a> {
     type Item = Token;
 
+    /// Gets the next Token or None if the iterator is finished.
     fn next(&mut self) -> Option<Self::Item> {
         self.next_token()
     }
 }
 
 impl<'a> Args<'a> {
+    /// Creates a new iterator from a str.
     pub(crate) fn new(raw: &'a str) -> Self {
         Self { raw, pos: 0 }
     }

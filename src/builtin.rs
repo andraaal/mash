@@ -7,7 +7,9 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::str::FromStr;
 
-pub(crate) enum BuiltinType {
+// BuiltinType represents the different builtins that exist.
+// This only distinguishes between the different builtins; all the actual work is done in Builtin.
+enum BuiltinType {
     Exit,
     Echo,
     Type,
@@ -36,6 +38,7 @@ impl FromStr for BuiltinType {
     }
 }
 
+/// Builtin is the internal representation of a builtin command.
 pub(crate) struct Builtin {
     typ: BuiltinType,
     args: Vec<String>,
@@ -45,6 +48,7 @@ pub(crate) struct Builtin {
 }
 
 impl Builtin {
+    /// Create a new Builtin from a str.
     pub(crate) fn new(typ: &str) -> Result<Self, ()> {
         let builtin_typ: BuiltinType = typ.parse()?;
         Ok(Builtin {
@@ -56,22 +60,27 @@ impl Builtin {
         })
     }
 
+    /// Set the target stdout stream for this builtin.
     pub(crate) fn set_stdout(&mut self, target: BuiltinStreamTarget) {
         self.stdout_target = target;
     }
 
+    /// Set the target stdin stream for this builtin.
     pub(crate) fn set_stdin(&mut self, target: BuiltinStreamSource) {
         self.stdin_target = target;
     }
 
+    /// Set the target stderr stream for this builtin.
     pub(crate) fn set_stderr(&mut self, target: BuiltinStreamTarget) {
         self.stderr_target = target;
     }
 
-    pub(crate) fn set_args(&mut self, args: &mut Vec<String>) {
+    /// Appends arguments for the builtin.
+    pub(crate) fn add_args(&mut self, args: &mut Vec<String>) {
         self.args.append(args);
     }
 
+    /// Executes the builtin synchronously. If the IO streams have not been manually set, they will be inherited from the shell.
     pub(crate) fn execute(&mut self, state: &mut ShellState) -> Result<(), Error> {
         match self.typ {
             BuiltinType::Exit => {

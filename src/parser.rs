@@ -3,6 +3,7 @@ use crate::cmd::Cmd;
 use crate::{ShellState, MAX_ALIAS_DEPTH};
 use std::iter::Peekable;
 
+/// Parser is a Pratt-Parser that turns Tokens from an Args iterator into an AST. It also resolves aliased commands.
 pub(crate) struct Parser<'a> {
     expressions: Vec<Expr>,
     errors: Vec<String>,
@@ -11,6 +12,7 @@ pub(crate) struct Parser<'a> {
 }
 
 impl<'a> Parser<'_> {
+    /// Create a new Parser from Args and a ShellState.
     pub fn new(args: Peekable<Args<'a>>, state: &'a ShellState) -> Parser<'a> {
         Parser {
             expressions: Vec::new(),
@@ -19,6 +21,8 @@ impl<'a> Parser<'_> {
             queue: vec![args],
         }
     }
+
+    /// Compiles the Args. Will return the expressions on success and a vector of error messages on failure.
     pub fn compile(mut self) -> Result<Vec<Expr>, Vec<String>> {
         let mut next = self.expression();
         self.expressions.push(next);
@@ -232,6 +236,7 @@ struct InfixParselet {
     parse: fn(parser: &mut Parser, token: Token, lhs: Expr) -> Expr,
 }
 
+/// One expression of the AST.
 pub(crate) enum Expr {
     Cmd(Cmd),
     OverwriteOutToFile(Box<Expr>, String),
@@ -239,5 +244,5 @@ pub(crate) enum Expr {
     OverwriteErrToFile(Box<Expr>, String),
     AppendErrToFile(Box<Expr>, String),
     Pipe(Box<Expr>, Box<Expr>),
-    Error, // Error is just here to be able to return something. I couldn't be bothered to write proper error handling (yet).
+    Error, // Error is just here to be able to return something to let the parser continue and find more errors.
 }

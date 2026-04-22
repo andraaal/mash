@@ -6,6 +6,7 @@ use std::io::{pipe, Error, PipeReader, PipeWriter};
 use std::process::{Command, Stdio};
 use std::rc::Rc;
 
+/// Representation of a command; can either be a builtin or an external command.
 pub(crate) enum Cmd {
     External(Command),
     Builtin(Builtin),
@@ -31,6 +32,7 @@ pub(crate) enum BuiltinStreamSource {
     File(File),
 }
 
+/// Specifies what should be done with an outgoing stream.
 #[expect(dead_code)]
 pub(crate) enum StreamTarget<'a> {
     InheritStdout,
@@ -40,6 +42,7 @@ pub(crate) enum StreamTarget<'a> {
     File(File),
 }
 
+/// Specifies what an incoming stream comes from.
 #[expect(dead_code)]
 pub(crate) enum StreamSource<'a> {
     Inherit,
@@ -50,6 +53,7 @@ pub(crate) enum StreamSource<'a> {
 }
 
 impl Cmd {
+    /// Creates a new Cmd from a str. If a Builtin with that names exists it uses that. Otherwise, an external command will be created.
     pub(crate) fn new(name: &str) -> Self {
         if let Ok(builtin) = Builtin::new(name) {
             Cmd::Builtin(builtin)
@@ -62,6 +66,7 @@ impl Cmd {
         }
     }
 
+    /// Specify the stdin of the Cmd.
     #[expect(dead_code)]
     pub(crate) fn set_stdin(&mut self, target: StreamSource) -> Result<(), Error> {
         match self {
@@ -135,6 +140,7 @@ impl Cmd {
         Ok(())
     }
 
+    /// Specify the stdout of the Cmd.
     pub(crate) fn set_stdout(&mut self, target: StreamTarget) -> Result<(), Error> {
         match self {
             Cmd::External(command) => {
@@ -149,6 +155,7 @@ impl Cmd {
         Ok(())
     }
 
+    /// Specify the stderr of the Cmd.
     pub(crate) fn set_stderr(&mut self, target: StreamTarget) -> Result<(), Error> {
         match self {
             Cmd::External(command) => {
@@ -228,7 +235,7 @@ impl Cmd {
                 command.args(args);
             }
             Cmd::Builtin(builtin) => {
-                builtin.set_args(args);
+                builtin.add_args(args);
             }
         }
     }
