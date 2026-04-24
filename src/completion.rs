@@ -6,7 +6,7 @@ use rustyline::validate::Validator;
 use rustyline::{Changeset, Context, Helper};
 use std::collections::HashSet;
 
-/// ShellHelper configures rustyline with completions.
+/// Configures `rustyline` completion, hints, and validation for shell input.
 pub(crate) struct ShellHelper {
     commands: HashSet<String>,
     history_hinter: HistoryHinter,
@@ -14,7 +14,7 @@ pub(crate) struct ShellHelper {
 }
 
 impl ShellHelper {
-    /// Creates a new ShellHelper.
+    /// Creates a helper with the shell's built-in command list.
     pub(crate) fn new() -> Self {
         let mut commands = HashSet::new();
 
@@ -34,6 +34,7 @@ impl ShellHelper {
         }
     }
 
+    /// Returns the command set so builtins and aliases can be registered.
     pub(crate) fn get_commands_mut(&mut self) -> &mut HashSet<String> {
         &mut self.commands
     }

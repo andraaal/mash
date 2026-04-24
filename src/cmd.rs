@@ -6,33 +6,33 @@ use std::io::{pipe, Error, PipeReader, PipeWriter};
 use std::process::{Command, Stdio};
 use std::rc::Rc;
 
-/// Representation of a command; can either be a builtin or an external command.
+/// A shell command, either a builtin or an external process.
 pub(crate) enum Cmd {
     External(Command),
     Builtin(Builtin),
 }
 
-// Internal Stream Target
+/// Internal stream destination used while wiring command I/O.
 pub(crate) enum BuiltinStreamTarget {
-    InheritStdout,                    // Piped to the Stdout of the parent process
-    InheritStderr,                    // Piped to the Stderr of the parent process
-    BuiltinPipe(Rc<RefCell<String>>), // Just written to the shared string
-    Null,                             // To the void
-    Pipe(PipeWriter),                 // Piped to the Stdin of the child
+    InheritStdout,                    //Piped to the Stdout of the parent process
+    InheritStderr,                    //Piped to the Stderr of the parent process
+    BuiltinPipe(Rc<RefCell<String>>), //Just written to the shared string
+    Null,                             //To the void
+    Pipe(PipeWriter),                 //Piped to the Stdin of the child
     File(File),
 }
 
-// Internal Stream Source
+/// Internal stream source used while wiring command I/O.
 #[expect(dead_code)]
 pub(crate) enum BuiltinStreamSource {
-    Inherit,                          // Piped from the Stdin of the parent process
-    BuiltinPipe(Rc<RefCell<String>>), // Just read from the shared string
-    Null,                             // From the void
-    Pipe(PipeReader),                 // Get input from this pipe
+    Inherit,                          //Piped from the Stdin of the parent process
+    BuiltinPipe(Rc<RefCell<String>>), //Just read from the shared string
+    Null,                             //From the void
+    Pipe(PipeReader),                 //Get input from this pipe
     File(File),
 }
 
-/// Specifies what should be done with an outgoing stream.
+/// Where an outgoing stream should be routed.
 #[expect(dead_code)]
 pub(crate) enum StreamTarget<'a> {
     InheritStdout,
@@ -42,7 +42,7 @@ pub(crate) enum StreamTarget<'a> {
     File(File),
 }
 
-/// Specifies what an incoming stream comes from.
+/// Where an incoming stream should be read from.
 #[expect(dead_code)]
 pub(crate) enum StreamSource<'a> {
     Inherit,
@@ -53,7 +53,10 @@ pub(crate) enum StreamSource<'a> {
 }
 
 impl Cmd {
-    /// Creates a new Cmd from a str. If a Builtin with that names exists it uses that. Otherwise, an external command will be created.
+    /// Creates a command wrapper for the given name.
+    ///
+    /// Builtins are resolved first; otherwise the name is treated as an
+    /// external executable.
     pub(crate) fn new(name: &str) -> Self {
         if let Ok(builtin) = Builtin::new(name) {
             Cmd::Builtin(builtin)
@@ -66,7 +69,7 @@ impl Cmd {
         }
     }
 
-    /// Specify the stdin of the Cmd.
+    /// Sets the command's standard input.
     #[expect(dead_code)]
     pub(crate) fn set_stdin(&mut self, target: StreamSource) -> Result<(), Error> {
         match self {
@@ -140,7 +143,7 @@ impl Cmd {
         Ok(())
     }
 
-    /// Specify the stdout of the Cmd.
+    /// Sets the command's standard output.
     pub(crate) fn set_stdout(&mut self, target: StreamTarget) -> Result<(), Error> {
         match self {
             Cmd::External(command) => {
@@ -155,7 +158,7 @@ impl Cmd {
         Ok(())
     }
 
-    /// Specify the stderr of the Cmd.
+    /// Sets the command's standard error.
     pub(crate) fn set_stderr(&mut self, target: StreamTarget) -> Result<(), Error> {
         match self {
             Cmd::External(command) => {
@@ -214,7 +217,7 @@ impl Cmd {
         Ok(res)
     }
 
-    /// Executes the Cmd synchronously and waits for it to return.
+    /// Executes the command synchronously and waits for it to finish.
     pub(crate) fn wait(&mut self, state: &mut ShellState) -> Result<(), Error> {
         match self {
             Cmd::External(command) => {
@@ -228,7 +231,7 @@ impl Cmd {
     }
     
 
-    /// Append args to the list of arguments of the Cmd
+    /// Appends arguments to the command's existing argument list.
     pub(crate) fn set_args(&mut self, args: &mut Vec<String>) {
         match self {
             Cmd::External(command) => {

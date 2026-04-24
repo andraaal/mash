@@ -2,13 +2,16 @@ use crate::args::Token::{
     AppendErrToFile, AppendOutToFile, OverwriteErrToFile, OverwriteOutToFile, Symbol,
 };
 
-/// Args is an iterator that turns a &str into Tokens.
+/// Tokenizes shell input into `Token`s.
 pub(crate) struct Args<'a> {
     raw: &'a str,
     pos: usize,
 }
 
-/// Input text is first parsed into tokens. They roughly correspond to words, with quotations being resolved and a few special cases for syntax.
+/// Tokens produced by the shell tokenizer.
+///
+/// `Symbol` represents a command name or argument, while the other variants
+/// capture shell syntax such as redirects and pipes.
 #[derive(Debug, PartialEq)]
 pub(crate) enum Token {
     Symbol(String),

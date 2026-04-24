@@ -7,8 +7,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::str::FromStr;
 
-// BuiltinType represents the different builtins that exist.
-// This only distinguishes between the different builtins; all the actual work is done in Builtin.
+/// Identifies which builtin implementation should run.
 enum BuiltinType {
     Exit,
     Echo,
@@ -38,7 +37,7 @@ impl FromStr for BuiltinType {
     }
 }
 
-/// Builtin is the internal representation of a builtin command.
+/// In-process implementation of a builtin command.
 pub(crate) struct Builtin {
     typ: BuiltinType,
     args: Vec<String>,
@@ -48,7 +47,7 @@ pub(crate) struct Builtin {
 }
 
 impl Builtin {
-    /// Create a new Builtin from a str.
+    /// Creates a builtin wrapper from a command name.
     pub(crate) fn new(typ: &str) -> Result<Self, ()> {
         let builtin_typ: BuiltinType = typ.parse()?;
         Ok(Builtin {
@@ -60,17 +59,17 @@ impl Builtin {
         })
     }
 
-    /// Set the target stdout stream for this builtin.
+    /// Sets the target stdout stream for this builtin.
     pub(crate) fn set_stdout(&mut self, target: BuiltinStreamTarget) {
         self.stdout_target = target;
     }
 
-    /// Set the target stdin stream for this builtin.
+    /// Sets the target stdin stream for this builtin.
     pub(crate) fn set_stdin(&mut self, target: BuiltinStreamSource) {
         self.stdin_target = target;
     }
 
-    /// Set the target stderr stream for this builtin.
+    /// Sets the target stderr stream for this builtin.
     pub(crate) fn set_stderr(&mut self, target: BuiltinStreamTarget) {
         self.stderr_target = target;
     }
@@ -80,7 +79,10 @@ impl Builtin {
         self.args.append(args);
     }
 
-    /// Executes the builtin synchronously. If the IO streams have not been manually set, they will be inherited from the shell.
+    /// Executes the builtin synchronously.
+    ///
+    /// If the I/O streams have not been specified, they inherit the shell's own
+    /// standard input, output, and error streams.
     pub(crate) fn execute(&mut self, state: &mut ShellState) -> Result<(), Error> {
         match self.typ {
             BuiltinType::Exit => {

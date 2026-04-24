@@ -3,7 +3,9 @@ use crate::cmd::Cmd;
 use crate::{ShellState, MAX_ALIAS_DEPTH};
 use std::iter::Peekable;
 
-/// Parser is a Pratt-Parser that turns Tokens from an Args iterator into an AST. It also resolves aliased commands.
+/// Pratt parser that turns tokenized shell input into an AST.
+///
+/// The parser also resolves aliases before building each command expression.
 pub(crate) struct Parser<'a> {
     expressions: Vec<Expr>,
     errors: Vec<String>,
@@ -22,7 +24,10 @@ impl<'a> Parser<'_> {
         }
     }
 
-    /// Compiles the Args. Will return the expressions on success and a vector of error messages on failure.
+    /// Parses the input stream into expressions.
+    ///
+    /// On success, returns the parsed expressions. On failure, returns every
+    /// syntax error collected while continuing to parse the rest of the line.
     pub fn compile(mut self) -> Result<Vec<Expr>, Vec<String>> {
         let mut next = self.expression();
         self.expressions.push(next);
@@ -144,7 +149,7 @@ impl<'a> Parser<'_> {
         Expr::Error
     }
 
-    // Any token that can't be at the start of an expression is considered infix
+    // Any token that cannot start a new expression is treated as an infix operator.
     const fn infix_parselet(tk: &Token) -> Option<InfixParselet> {
         let tp = match tk {
             Token::OverwriteOutToFile => InfixParselet {
@@ -203,7 +208,7 @@ impl<'a> Parser<'_> {
         Some(tp)
     }
 
-    // Any token that can start an expression is considered prefix
+    ///Any token that can begin an expression is treated as a prefix parselet.
     const fn prefix_parselet(tk: &Token) -> Option<PrefixParselet> {
         let tp = match tk {
             Token::Symbol(_) => PrefixParselet {
@@ -236,7 +241,10 @@ struct InfixParselet {
     parse: fn(parser: &mut Parser, token: Token, lhs: Expr) -> Expr,
 }
 
-/// One expression of the AST.
+/// A shell expression node.
+///
+/// This covers a command invocation, redirection, piping, or a parser error
+/// placeholder used to keep recovering after malformed input.
 pub(crate) enum Expr {
     Cmd(Cmd),
     OverwriteOutToFile(Box<Expr>, String),
